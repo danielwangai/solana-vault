@@ -266,7 +266,22 @@ async function main() {
     // Token account might not exist yet or has zero balance
     vaultTokenBalance2 = "0";
   }
-  console.log(`Vault Token Balance: ${vaultTokenBalance2}`);
+  console.log(`Vault Token Balance: ${vaultTokenBalance2}\n`);
+
+  // Lock tokens
+  console.log(`Locking tokens for ${lockDurationSeconds} seconds`);
+  
+  const lockTx = await program.methods
+    .lockTokens(new BN(lockDurationSeconds))
+    .accounts({
+      user: wallet.publicKey,
+    })
+    .signers([wallet])
+    .rpc();
+
+  console.log(`\nTokens locked successfully!`);
+  console.log(`Transaction hash: ${lockTx}`);
+  console.log(`View on Solscan: https://solscan.io/tx/${lockTx}?cluster=devnet`);
 }
 
 // Run the script
