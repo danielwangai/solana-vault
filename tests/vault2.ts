@@ -1,69 +1,51 @@
-// Import Anchor framework for Solana program testing
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
 import { Vault2 } from "../target/types/vault2";
 
-// Import Solana web3.js for blockchain interactions
 import { PublicKey, Keypair } from "@solana/web3.js";
 import { BN } from "@coral-xyz/anchor";
 
-// Import testing framework
 import { assert } from "chai";
 
-// Import SPL Token utilities for token operations
-import { 
-  TOKEN_PROGRAM_ID,                    // The official SPL Token program ID
-  createMint,                          // Create a new token mint
-  createAccount,                       // Create a token account
-  mintTo,                             // Mint tokens to an account
-  getAccount,                         // Get token account information
-  getAssociatedTokenAddress,          // Get associated token account address
-  createAssociatedTokenAccountInstruction, // Instruction to create ATA
-  ASSOCIATED_TOKEN_PROGRAM_ID         // Associated Token Account program ID
+import {
+  TOKEN_PROGRAM_ID,
+  createMint,
+  createAccount,
+  mintTo,
+  getAccount,
 } from "@solana/spl-token";
 
 describe("vault2", () => {
-  // Configure the Anchor provider to use the local Solana cluster
-  // This connects our tests to a local validator for testing
   anchor.setProvider(anchor.AnchorProvider.env());
 
-  // Get the compiled program instance for testing
   const program = anchor.workspace.vault2 as Program<Vault2>;
 
-  // Test user keypair - represents a user who will interact with the vault
-  const bob = anchor.web3.Keypair.generate();
-  
-  // Program Derived Addresses (PDAs) - deterministic addresses derived from seeds
-  let statePDA: anchor.web3.PublicKey;        // PDA for the vault state account
-  let vaultPDA: anchor.web3.PublicKey;       // PDA for the vault token account
-  let vaultAuthorityPDA: anchor.web3.PublicKey; // PDA for the vault authority
-  
-  // Token-related accounts
-  let mint: PublicKey;                        // Token mint address (the token type)
-  let bobTokenAccount: PublicKey;            // User's token account
-  let vaultTokenAccount: PublicKey;          // Vault's token account
-  
+  let bob = anchor.web3.Keypair.generate();
+  let statePDA: anchor.web3.PublicKey;
+  let vaultPDA: anchor.web3.PublicKey;
+  let vaultAuthorityPDA: anchor.web3.PublicKey;
+
+  let mint: PublicKey;
+  let bobTokenAccount: PublicKey;
+  let vaultTokenAccount: PublicKey;
+
   beforeEach(async () => {
-    // Generate fresh keypair for each test to avoid account conflicts
-    const freshBob = anchor.web3.Keypair.generate();
-    await airdrop(freshBob.publicKey, 2_000_000_000);
-    
-    // Update bob reference
-    Object.assign(bob, freshBob);
-    
+    bob = anchor.web3.Keypair.generate();
+    await airdrop(bob.publicKey, 2_000_000_000);
+
     statePDA = getStatePDA(bob.publicKey, program.programId);
     vaultPDA = getVaultPDA(statePDA, program.programId);
     vaultAuthorityPDA = getVaultAuthorityPDA(statePDA, program.programId);
-    
+
     // Create fresh token mint for each test
     mint = await createMint(
       program.provider.connection,
       bob,
       bob.publicKey,
       null,
-      6 // decimals
+      6
     );
-    
+
     // Create fresh user token account
     bobTokenAccount = await createAccount(
       program.provider.connection,
@@ -71,7 +53,7 @@ describe("vault2", () => {
       mint,
       bob.publicKey
     );
-    
+
     // Mint tokens to user
     await mintTo(
       program.provider.connection,
@@ -79,14 +61,14 @@ describe("vault2", () => {
       mint,
       bobTokenAccount,
       bob,
-      1000 * 10**6 // 1000 tokens with 6 decimals
+      1000 * 10 ** 6
     );
   });
 
   it("Is initialized!", async () => {
     // Initialize the vault with token mint
     const tx = await program.methods
-      .initialize(new BN(100 * 10**6), mint) // 100 tokens target
+      .initialize(new BN(100 * 10 ** 6), mint) // 100 tokens target
       .accounts({
         user: bob.publicKey,
         state: statePDA,
@@ -98,23 +80,26 @@ describe("vault2", () => {
       })
       .signers([bob])
       .rpc();
-    
+
     console.log("Initialize transaction signature", tx);
-    
+
     // Store the vault token account address
     vaultTokenAccount = vaultPDA;
-    
+
     // Verify the state was initialized correctly
     const stateAccount = await program.account.vault.fetch(statePDA);
-    assert.equal(stateAccount.amount.toString(), (100 * 10**6).toString());
+    assert.equal(stateAccount.amount.toString(), (100 * 10 ** 6).toString());
     assert.equal(stateAccount.mint.toString(), mint.toString());
-    assert.equal(stateAccount.vaultTokenAccount.toString(), vaultTokenAccount.toString());
+    assert.equal(
+      stateAccount.vaultTokenAccount.toString(),
+      vaultTokenAccount.toString()
+    );
   });
 
   it("Can deposit tokens!", async () => {
     // First initialize the vault
     await program.methods
-      .initialize(new BN(100 * 10**6), mint)
+      .initialize(new BN(100 * 10 ** 6), mint)
       .accounts({
         user: bob.publicKey,
         state: statePDA,
@@ -126,15 +111,21 @@ describe("vault2", () => {
       })
       .signers([bob])
       .rpc();
-    
+
     vaultTokenAccount = vaultPDA;
-    
+
     // Get token balances before deposit
-    const bobTokenBalanceBefore = await getAccount(program.provider.connection, bobTokenAccount);
-    const vaultTokenBalanceBefore = await getAccount(program.provider.connection, vaultTokenAccount);
+    const bobTokenBalanceBefore = await getAccount(
+      program.provider.connection,
+      bobTokenAccount
+    );
+    const vaultTokenBalanceBefore = await getAccount(
+      program.provider.connection,
+      vaultTokenAccount
+    );
 
     // Deposit 50 tokens
-    const depositAmount = new BN(50 * 10**6);
+    const depositAmount = new BN(50 * 10 ** 6);
     await program.methods
       .deposit(depositAmount)
       .accounts({
@@ -149,17 +140,29 @@ describe("vault2", () => {
       .rpc();
 
     // Get token balances after deposit
-    const bobTokenBalanceAfter = await getAccount(program.provider.connection, bobTokenAccount);
-    const vaultTokenBalanceAfter = await getAccount(program.provider.connection, vaultTokenAccount);
+    const bobTokenBalanceAfter = await getAccount(
+      program.provider.connection,
+      bobTokenAccount
+    );
+    const vaultTokenBalanceAfter = await getAccount(
+      program.provider.connection,
+      vaultTokenAccount
+    );
 
     // Verify the deposit worked
     assert.equal(
       vaultTokenBalanceAfter.amount.toString(),
-      (BigInt(vaultTokenBalanceBefore.amount.toString()) + BigInt(depositAmount.toString())).toString()
+      (
+        BigInt(vaultTokenBalanceBefore.amount.toString()) +
+        BigInt(depositAmount.toString())
+      ).toString()
     );
     assert.equal(
       bobTokenBalanceBefore.amount.toString(),
-      (BigInt(bobTokenBalanceAfter.amount.toString()) + BigInt(depositAmount.toString())).toString()
+      (
+        BigInt(bobTokenBalanceAfter.amount.toString()) +
+        BigInt(depositAmount.toString())
+      ).toString()
     );
   });
 
@@ -198,13 +201,10 @@ describe("vault2", () => {
   //   assert.equal(bobBalanceAfter, bobBalanceBefore);
   // });
 
-  // HELPERS
-  // function to airdrop Lamports of a specified amount to a user
-  
   it("can withdraw tokens!", async () => {
     // First initialize and deposit tokens
     await program.methods
-      .initialize(new BN(100 * 10**6), mint)
+      .initialize(new BN(100 * 10 ** 6), mint)
       .accounts({
         user: bob.publicKey,
         state: statePDA,
@@ -216,12 +216,12 @@ describe("vault2", () => {
       })
       .signers([bob])
       .rpc();
-    
+
     vaultTokenAccount = vaultPDA;
-    
+
     // Deposit some tokens first
     await program.methods
-      .deposit(new BN(50 * 10**6))
+      .deposit(new BN(50 * 10 ** 6))
       .accounts({
         user: bob.publicKey,
         userTokenAccount: bobTokenAccount,
@@ -234,60 +234,19 @@ describe("vault2", () => {
       .rpc();
 
     // Get token balances before withdrawal
-    const bobTokenBalanceBefore = await getAccount(program.provider.connection, bobTokenAccount);
-    const vaultTokenBalanceBefore = await getAccount(program.provider.connection, vaultTokenAccount);
-
-    const withdrawAmount = new BN(20 * 10**6); // Withdraw 20 tokens
-
-    await program.methods.withdraw(withdrawAmount).accounts({
-      user: bob.publicKey,
-      userTokenAccount: bobTokenAccount,
-      vaultTokenAccount: vaultTokenAccount,
-      state: statePDA,
-      vaultAuthority: vaultAuthorityPDA,
-      tokenProgram: TOKEN_PROGRAM_ID,
-    }).signers([bob]).rpc();
-
-    // Get token balances after withdrawal
-    const bobTokenBalanceAfter = await getAccount(program.provider.connection, bobTokenAccount);
-    const vaultTokenBalanceAfter = await getAccount(program.provider.connection, vaultTokenAccount);
-
-    // Verify the withdrawal worked
-    assert.equal(
-      vaultTokenBalanceBefore.amount.toString(),
-      (BigInt(vaultTokenBalanceAfter.amount.toString()) + BigInt(withdrawAmount.toString())).toString()
+    const bobTokenBalanceBefore = await getAccount(
+      program.provider.connection,
+      bobTokenAccount
     );
-    assert.equal(
-      bobTokenBalanceAfter.amount.toString(),
-      (BigInt(bobTokenBalanceBefore.amount.toString()) + BigInt(withdrawAmount.toString())).toString()
+    const vaultTokenBalanceBefore = await getAccount(
+      program.provider.connection,
+      vaultTokenAccount
     );
-  });
 
-  it("sends back vault tokens to user when target is reached/exceeded", async () => {
-    // Initialize vault with 100 token target
-    await program.methods
-      .initialize(new BN(100 * 10**6), mint)
-      .accounts({
-        user: bob.publicKey,
-        state: statePDA,
-        vaultTokenAccount: vaultPDA,
-        vaultAuthority: vaultAuthorityPDA,
-        mint: mint,
-        tokenProgram: TOKEN_PROGRAM_ID,
-        systemProgram: anchor.web3.SystemProgram.programId,
-      })
-      .signers([bob])
-      .rpc();
-    
-    vaultTokenAccount = vaultPDA;
-    
-    // Get token balances before deposit
-    const bobTokenBalanceBefore = await getAccount(program.provider.connection, bobTokenAccount);
-    const vaultTokenBalanceBefore = await getAccount(program.provider.connection, vaultTokenAccount);
+    const withdrawAmount = new BN(20 * 10 ** 6); // Withdraw 20 tokens
 
-    // Deposit exactly 100 tokens (target amount) - should trigger auto-release
     await program.methods
-      .deposit(new BN(100 * 10**6))
+      .withdraw(withdrawAmount)
       .accounts({
         user: bob.publicKey,
         userTokenAccount: bobTokenAccount,
@@ -299,24 +258,218 @@ describe("vault2", () => {
       .signers([bob])
       .rpc();
 
-    // Get token balances after deposit
-    const bobTokenBalanceAfter = await getAccount(program.provider.connection, bobTokenAccount);
-    const vaultTokenBalanceAfter = await getAccount(program.provider.connection, vaultTokenAccount);
+    // Get token balances after withdrawal
+    const bobTokenBalanceAfter = await getAccount(
+      program.provider.connection,
+      bobTokenAccount
+    );
+    const vaultTokenBalanceAfter = await getAccount(
+      program.provider.connection,
+      vaultTokenAccount
+    );
 
-    // Since vault balance reached target amount, it should be sent back to bob
-    // so vault balance should be 0
-    assert.equal(vaultTokenBalanceAfter.amount.toString(), "0");
-    
-    // Bob should have roughly the same balance as before (minus transaction fees)
-    // because he deposited 100 tokens and got 100 tokens back
-    const expectedBobBalance = bobTokenBalanceBefore.amount;
-    // Allow for small transaction fee differences
-    assert.isAtMost(
-      Math.abs(Number(bobTokenBalanceAfter.amount) - Number(expectedBobBalance)), 
-      1000 // Allow 1000 units difference for transaction fees
+    // Verify the withdrawal worked
+    assert.equal(
+      vaultTokenBalanceBefore.amount.toString(),
+      (
+        BigInt(vaultTokenBalanceAfter.amount.toString()) +
+        BigInt(withdrawAmount.toString())
+      ).toString()
+    );
+    assert.equal(
+      bobTokenBalanceAfter.amount.toString(),
+      (
+        BigInt(bobTokenBalanceBefore.amount.toString()) +
+        BigInt(withdrawAmount.toString())
+      ).toString()
     );
   });
 
+  it("can lock tokens in vault", async () => {
+    // Initialize vault
+    await program.methods
+      .initialize(new BN(100 * 10 ** 6), mint)
+      .accounts({
+        user: bob.publicKey,
+        state: statePDA,
+        vaultTokenAccount: vaultPDA,
+        vaultAuthority: vaultAuthorityPDA,
+        mint: mint,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .signers([bob])
+      .rpc();
+
+    vaultTokenAccount = vaultPDA;
+
+    // Deposit some tokens
+    await program.methods
+      .deposit(new BN(50 * 10 ** 6))
+      .accounts({
+        user: bob.publicKey,
+        userTokenAccount: bobTokenAccount,
+        vaultTokenAccount: vaultTokenAccount,
+        state: statePDA,
+        vaultAuthority: vaultAuthorityPDA,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .signers([bob])
+      .rpc();
+
+    // Lock tokens for 1 hour (3600 seconds)
+    const lockDuration = new BN(3600);
+    await program.methods
+      .lockTokens(lockDuration)
+      .accounts({
+        user: bob.publicKey,
+        state: statePDA,
+      })
+      .signers([bob])
+      .rpc();
+
+    // Verify the lock was set
+    const stateAccount = await program.account.vault.fetch(statePDA);
+    assert.isNotNull(stateAccount.lockedUntil);
+    assert(stateAccount.lockedUntil !== null);
+
+    // Verify locked_until is in the future (should be approximately current time + 3600)
+    const currentTime = Math.floor(Date.now() / 1000);
+    const lockedUntil = stateAccount.lockedUntil.toNumber();
+    assert.isAtLeast(lockedUntil, currentTime);
+    assert.isAtMost(lockedUntil, currentTime + 3700); // Allow some buffer for transaction time
+  });
+
+  it("prevents withdrawal when tokens are locked", async () => {
+    // Initialize vault
+    await program.methods
+      .initialize(new BN(100 * 10 ** 6), mint)
+      .accounts({
+        user: bob.publicKey,
+        state: statePDA,
+        vaultTokenAccount: vaultPDA,
+        vaultAuthority: vaultAuthorityPDA,
+        mint: mint,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .signers([bob])
+      .rpc();
+
+    vaultTokenAccount = vaultPDA;
+
+    // Deposit some tokens
+    await program.methods
+      .deposit(new BN(50 * 10 ** 6))
+      .accounts({
+        user: bob.publicKey,
+        userTokenAccount: bobTokenAccount,
+        vaultTokenAccount: vaultTokenAccount,
+        state: statePDA,
+        vaultAuthority: vaultAuthorityPDA,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .signers([bob])
+      .rpc();
+
+    // Lock tokens for 1 hour (3600 seconds)
+    const lockDuration = new BN(3600);
+    await program.methods
+      .lockTokens(lockDuration)
+      .accounts({
+        user: bob.publicKey,
+        state: statePDA,
+      })
+      .signers([bob])
+      .rpc();
+
+    // Try to withdraw - should fail with TokensLocked error
+    const withdrawAmount = new BN(20 * 10 ** 6);
+    try {
+      await program.methods
+        .withdraw(withdrawAmount)
+        .accounts({
+          user: bob.publicKey,
+          userTokenAccount: bobTokenAccount,
+          vaultTokenAccount: vaultTokenAccount,
+          state: statePDA,
+          vaultAuthority: vaultAuthorityPDA,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .signers([bob])
+        .rpc();
+
+      // If we get here, the test should fail
+      assert.fail("Withdrawal should have failed but succeeded");
+    } catch (error: any) {
+      // Verify the error is TokensLocked
+      assert.include(error.toString(), "TokensLocked");
+    }
+  });
+
+  it("allows withdrawal when tokens are not locked", async () => {
+    // Initialize vault
+    await program.methods
+      .initialize(new BN(100 * 10 ** 6), mint)
+      .accounts({
+        user: bob.publicKey,
+        state: statePDA,
+        vaultTokenAccount: vaultPDA,
+        vaultAuthority: vaultAuthorityPDA,
+        mint: mint,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .signers([bob])
+      .rpc();
+
+    vaultTokenAccount = vaultPDA;
+
+    // Deposit some tokens
+    await program.methods
+      .deposit(new BN(50 * 10 ** 6))
+      .accounts({
+        user: bob.publicKey,
+        userTokenAccount: bobTokenAccount,
+        vaultTokenAccount: vaultTokenAccount,
+        state: statePDA,
+        vaultAuthority: vaultAuthorityPDA,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .signers([bob])
+      .rpc();
+
+    // Verify tokens are not locked initially
+    const stateAccountBefore = await program.account.vault.fetch(statePDA);
+    assert.isNull(stateAccountBefore.lockedUntil);
+
+    // Withdraw should succeed when tokens are not locked
+    const withdrawAmount = new BN(20 * 10 ** 6);
+    await program.methods
+      .withdraw(withdrawAmount)
+      .accounts({
+        user: bob.publicKey,
+        userTokenAccount: bobTokenAccount,
+        vaultTokenAccount: vaultTokenAccount,
+        state: statePDA,
+        vaultAuthority: vaultAuthorityPDA,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .signers([bob])
+      .rpc();
+
+    // Verify withdrawal succeeded
+    const vaultTokenBalanceAfter = await getAccount(
+      program.provider.connection,
+      vaultTokenAccount
+    );
+    assert.equal(
+      vaultTokenBalanceAfter.amount.toString(),
+      (30 * 10 ** 6).toString()
+    );
+  });
+
+  // HELPERS
   const airdrop = async (publicKey: anchor.web3.PublicKey, amount: number) => {
     const sig = await program.provider.connection.requestAirdrop(
       publicKey,

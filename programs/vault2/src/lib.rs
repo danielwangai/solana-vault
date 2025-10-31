@@ -1,6 +1,6 @@
 // Import necessary dependencies for Anchor framework and SPL token operations
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Token, TokenAccount, Mint, Transfer as TokenTransfer};
+use anchor_spl::token::{self, Token, TokenAccount, Transfer as TokenTransfer};
 
 // Declare the program ID - this is the unique identifier for our vault program
 declare_id!("6Xf5BppD241vj5Pw5nYTpU78MEyvkQ5N77cCxdyB1rjH");
@@ -52,6 +52,7 @@ pub mod vault2 {
     /// 
     /// This function allows users to withdraw tokens from their vault before
     /// reaching the target amount. The vault authority (PDA) signs the transfer.
+    /// Tokens cannot be withdrawn if they are currently locked.
     /// 
     /// # Arguments
     /// * `ctx` - The withdraw context containing user and vault token accounts
@@ -62,6 +63,24 @@ pub mod vault2 {
     pub fn withdraw(ctx: Context<Withdraw>, amount: u64) -> Result<()> {
         // Delegate the withdraw logic to the accounts implementation
         ctx.accounts.withdraw(amount)?;
+
+        Ok(())
+    }
+
+    /// Lock tokens in the vault for a specified duration
+    /// 
+    /// This function locks tokens in the vault, preventing withdrawals until
+    /// the lock period expires. The lock duration is specified in seconds.
+    /// 
+    /// # Arguments
+    /// * `ctx` - The lock context containing vault state
+    /// * `duration_seconds` - The duration in seconds to lock the tokens
+    /// 
+    /// # Returns
+    /// * `Result<()>` - Success or error result
+    pub fn lock_tokens(ctx: Context<LockTokens>, duration_seconds: i64) -> Result<()> {
+        // Delegate the lock logic to the accounts implementation
+        ctx.accounts.lock_tokens(duration_seconds)?;
 
         Ok(())
     }
@@ -160,6 +179,9 @@ impl<'info> Initialize<'info> {
         
         // Store the vault token account address for reference
         self.state.vault_token_account = self.vault_token_account.key();
+        
+        // Initialize lock to None (unlocked)
+        self.state.locked_until = None;
         
         Ok(())
     }
@@ -365,6 +387,15 @@ impl<'info> Withdraw<'info> {
     /// # Returns
     /// * `Result<()>` - Success or error result
     pub fn withdraw(&mut self, amount: u64) -> Result<()> {
+        // Check if tokens are currently locked
+        if let Some(locked_until) = self.state.locked_until {
+            let clock = Clock::get()?;
+            require!(
+                clock.unix_timestamp >= locked_until,
+                ErrorCode::TokensLocked
+            );
+        }
+
         // Prepare CPI accounts for transferring tokens from vault to user
         let cpi_program = self.token_program.to_account_info();
         let cpi_accounts = TokenTransfer {
@@ -388,6 +419,57 @@ impl<'info> Withdraw<'info> {
         // Transfer the specified amount of tokens from vault to user
         token::transfer(cpi_ctx, amount)?;
 
+        Ok(())
+    }
+}
+
+/// Account structure for locking tokens in the vault
+/// 
+/// This struct defines all the accounts required to lock tokens:
+/// - User account (signer)
+/// - Vault state (to update lock status)
+#[derive(Accounts)]
+pub struct LockTokens<'info> {
+    /// The user locking the tokens (must sign the transaction)
+    /// Only the vault owner can lock tokens
+    #[account(mut)]
+    pub user: Signer<'info>,
+    
+    /// The vault state account containing configuration and metadata
+    /// Validates using PDA seeds and stored bump seed
+    /// Also validates that the user is the owner of the vault
+    #[account(
+        mut,
+        seeds = [b"state", user.key().as_ref()], // PDA seeds for deterministic address
+        bump = state.state_bump,                  // Use stored bump seed for validation
+    )]
+    pub state: Account<'info, Vault>,
+}
+
+/// Implementation for the LockTokens accounts
+impl<'info> LockTokens<'info> {
+    /// Lock tokens in the vault for a specified duration
+    /// 
+    /// This function sets the lock expiration timestamp based on the current
+    /// time plus the specified duration. Tokens will be locked until this
+    /// timestamp is reached.
+    /// 
+    /// # Arguments
+    /// * `duration_seconds` - The duration in seconds to lock the tokens
+    /// 
+    /// # Returns
+    /// * `Result<()>` - Success or error result
+    pub fn lock_tokens(&mut self, duration_seconds: i64) -> Result<()> {
+        // Get the current timestamp from the Solana clock
+        let clock = Clock::get()?;
+        
+        // Calculate the lock expiration timestamp
+        let locked_until = clock.unix_timestamp.checked_add(duration_seconds)
+            .ok_or(ErrorCode::InvalidLockDuration)?;
+        
+        // Update the vault state with the lock expiration timestamp
+        self.state.locked_until = Some(locked_until);
+        
         Ok(())
     }
 }
@@ -418,4 +500,21 @@ pub struct Vault {
     /// The address of the vault's token account
     /// This is where the actual tokens are stored
     pub vault_token_account: Pubkey,
+    
+    /// The timestamp until which tokens are locked (Unix timestamp in seconds)
+    /// If None, tokens are not locked and can be withdrawn at any time
+    /// If Some(timestamp), tokens cannot be withdrawn until the current time >= timestamp
+    pub locked_until: Option<i64>,
+}
+
+/// Custom error codes for the vault program
+#[error_code]
+pub enum ErrorCode {
+    /// Tokens are currently locked and cannot be withdrawn
+    #[msg("Tokens are currently locked and cannot be withdrawn")]
+    TokensLocked,
+    
+    /// Invalid lock duration provided
+    #[msg("Invalid lock duration provided")]
+    InvalidLockDuration,
 }
